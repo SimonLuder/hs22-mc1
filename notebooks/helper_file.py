@@ -1,7 +1,8 @@
-import pika
 from kafka import KafkaConsumer, KafkaProducer
+from IPython.display import clear_output
+import matplotlib.pyplot as plt
 import pandas as pd
-import datetime
+import pika
 import json
 import uuid
 import time
@@ -9,7 +10,7 @@ import os
 
 
 
-class Producer_1():
+class Producer():
     '''
     Producer class that connects to a specified framework and produces messages on the network
     Methods:
@@ -80,48 +81,17 @@ class Producer_1():
             
             
             
-# class Producer_2(Producer_1):
-    
-#     def __init__(self, framework='kafka', servers='broker1:9093'):
-#         super().__init__(framework, servers)
-        
-#     def produce(self, topic_name, message):
-#         try:
-#             if self.framework == "kafka":
-#                 pass
-#                 pd.read_csv()
-#                 key = str(uuid.uuid4())
-#                 value = json.dumps(message)
-#                 key_bytes = bytes(key, encoding='utf-8')
-#                 value_bytes = bytes(value, encoding='utf-8')
-#                 # value_bytes = message.SerializeToString()
-#                 self.producer.send(topic_name, key=key_bytes, value=value_bytes)
-#                 self.producer.flush()
-                
-#             elif self.framework == "rabbitmq":
-#                 pass
-#                 message = json.dumps(message)
-#                 self.channel.queue_declare(queue=topic_name)
-#                 self.channel.basic_publish(exchange="", routing_key=topic_name, body=message)
-#                 # self.channel.basic_publish(exchange="", routing_key=topic_name, body=message.SerializeToString())
-            
-#         except Exception as ex:
-#             print(f'Exception while producing message: {ex}')
-            
-        
-            
-            
-class DataSink():
+class DataSink_1():
     '''
     DataSink class that calculates the most rated producs and the average rating per product and save the results as csv
     '''
     
-    def __init__(self, path="./src/datasink/"):
+    def __init__(self, path):
         self.sink_path = path
         self.__ckeck_path()
         self.last_sink = time.time()
         self.history = pd.DataFrame()
-        
+       
     
     def __ckeck_path(self):
         '''
@@ -131,24 +101,24 @@ class DataSink():
             os.makedirs(self.sink_path)
         
         
-    def check_period(self, s=60):
+    def __check_period(self, s=60):
         '''
         Checks if a specified time intervall has passed and returns a boolean value
         Args: 
             s (int): nr of seconds per time intervall
         '''
-        return  self.last_sink + 60 <= time.time() 
+        return  self.last_sink + s <= time.time() 
     
     
-    def add_entry(self, message):
+    def update_entry(self, message):
         '''
         Adds a new message to the history df
         Args: 
             message (dict) message as json like dict
         '''
         self.history = self.history.append(message, ignore_index=True)
-            
-            
+        
+        
     def __calculate_recent_popular(self):
         '''
         Calculates the nr of ratings and the average rating score per product and returns it as pandas.DataFrame
@@ -160,32 +130,74 @@ class DataSink():
             df = df.reset_index()
             return df
     
-    
-    def __delete_history(self):
-        '''
-        Resets the self.history atribute to an empty dataframe
-        '''
-        self.history = pd.DataFrame()
-        
+            
+    def check_sink_criterias(self):
+        return self.__check_period()
+       
         
     def sink_data(self):
         df = self.__calculate_recent_popular()
         df.to_csv(self.sink_path + time.strftime('%Y_%m_%d_%H_%M_%S', time.localtime()) + ".csv", index=False)
         self.last_sink = time.time()
-        self.__delete_history()
+        self.history = pd.DataFrame()
         print("Data sink was successful!")
         
         
+        
+class DataSink_2():
+    '''
+    DataSink class that calculates the most rated producs and the average rating per product and save the results as csv
+    '''
     
-class Consumer_1():
+    def __init__(self, path):
+        # self.sink_path = path
+        # self.__ckeck_path()
+        self.history = None
+        
+        
+    def check_message_valid(self):
+        return  self.last_sink + s <= time.time() 
     
-    def __init__(self, framework='kafka', host_name="broker1", port=9093):
+    
+    def update_entry(self, message):
+        print(message)
+        self.history = pd.read_json(message, orient="columns")
+        
+        
+    def __plot_ranking(self):
+        df = self.history
+        clear_output(wait=True)
+        plt.figure(figsize=(10,5))
+        plt.bar(df.index, df["count"])
+        for x, y, p in zip(df.index, df["count"], df["asin"]):
+            plt.text(x, y+1, p, ha="center")
+        for x, y, p in zip(df.index, df["count"], df["mean_overall"]):
+            plt.text(x, y-3, round(p,1), ha="center")
+        plt.title("Most ranked products")
+        plt.xlabel("place")
+        plt.ylabel("nr of rankings")
+        plt.show()
+           
+            
+    def check_sink_criterias(self):
+        return True
+
+    
+    def sink_data(self):
+        self.__plot_ranking()
+        self.history = None
+
+        
+        
+class Consumer():
+    
+    def __init__(self, data_sink, framework='kafka', host_name="broker1", port=9093 ):
         self.framework = framework
         self.host_name = host_name
         self.port = port
         self.servers = host_name + ":" + str(port)
+        self.data_sink = data_sink
         self.setup()
-        self.data_sink = DataSink()
         
         
     def setup(self):
@@ -221,20 +233,19 @@ class Consumer_1():
                 
                 for i, msg in enumerate(self.consumer):
                     message = json.loads(msg.value)
-                    
-                    self.data_sink.add_entry(message)
-                    if self.data_sink.check_period(60):
+                    print(message)
+                    self.data_sink.update_entry(message)
+                    if self.data_sink.check_sink_criterias():
+                        print("success")
                         self.data_sink.sink_data()
                         
             elif self.framework == "rabbitmq":
-                print("rabbitmq consume not implemented")
                 
                 def callback(ch, methods, properties, body):
                     message = json.loads(body)
-                    
                     # call datasink
-                    self.data_sink.add_entry(message)
-                    if self.data_sink.check_period(60):
+                    self.data_sink.update_entry(message)
+                    if self.data_sink.check_sink_criterias():
                         self.data_sink.sink_data()
                     
                     ch.basic_ack(delivery_tag=methods.delivery_tag)
