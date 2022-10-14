@@ -101,9 +101,6 @@ services:
     image: rabbitmq:3.8-management-alpine
     hostname: rabbitmq1
     container_name: rabbitmq1
-      environment:
-        - RABBITMQ_DEFAULT_USER=myuser
-        - RABBITMQ_DEFAULT_PASS=mypassword
     ports:
       # AMQP protocol port
       - '5672:5672'
