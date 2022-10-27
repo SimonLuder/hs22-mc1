@@ -10,7 +10,7 @@ services:
       - ./src:/home/jovyan/src/
     ports:
       - "8888:8888"
-
+      - "8080:8080"
   zookeeper:
     image: confluentinc/cp-zookeeper
     hostname: zookeeper

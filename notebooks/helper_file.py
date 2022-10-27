@@ -7,7 +7,9 @@ import json
 import uuid
 import time
 import os
-
+from message_struc_pb2 import Rating
+from google.protobuf.json_format import MessageToJson
+from memory_profiler import profile
 
 
 class Producer():
@@ -18,6 +20,7 @@ class Producer():
         produces: Sends recieved messages to the initialized framework
     '''
     
+  
     def __init__(self, framework='kafka', host_name="broker1", port=9093):
         self.framework = framework
         self.host_name = host_name
@@ -25,7 +28,7 @@ class Producer():
         self.servers = host_name + ":" + str(port)
         self.setup_connection()
         
-        
+   
     def setup_connection(self):
         '''
         Sets up the connecton to the specified framework.
@@ -51,7 +54,7 @@ class Producer():
         except Exception as ex:
             print(f"Exception while connecting {self.framework}: {ex}")
         
-
+   
     def produce(self, topic_name, message):
         '''
         Sends recieved messages to the initialized framework
@@ -62,15 +65,17 @@ class Producer():
         try:
             if self.framework == "kafka":
                 key = str(uuid.uuid4())
-                value = json.dumps(message)
                 key_bytes = bytes(key, encoding='utf-8')
-                value_bytes = bytes(value, encoding='utf-8')
-                # value_bytes = message.SerializeToString()
+                # value = json.dumps(message)
+                # value_bytes = bytes(value, encoding='utf-8')
+                value_bytes = message.SerializeToString()
+                print(value_bytes)
                 self.producer.send(topic_name, key=key_bytes, value=value_bytes)
                 self.producer.flush()
                 
             elif self.framework == "rabbitmq":
-                message = json.dumps(message)
+                # message = json.dumps(message)
+                message = message.SerializeToString()
                 # self.channel.exchange_declare(exchange=topic_name, exchange_type='direct')
                 self.channel.queue_declare(queue=topic_name)
                 self.channel.basic_publish(exchange="", routing_key=topic_name, body=message)
@@ -85,14 +90,14 @@ class DataSink_1():
     '''
     DataSink class that calculates the most rated producs and the average rating per product and save the results as csv
     '''
-    
+
     def __init__(self, path):
         self.sink_path = path
         self.__ckeck_path()
         self.last_sink = time.time()
         self.history = pd.DataFrame()
        
-    
+   
     def __ckeck_path(self):
         '''
         Checks if path to save csv's exists and creates path if not
@@ -100,7 +105,7 @@ class DataSink_1():
         if not os.path.exists(self.sink_path):
             os.makedirs(self.sink_path)
         
-        
+ 
     def __check_period(self, s=60):
         '''
         Checks if a specified time intervall has passed and returns a boolean value
@@ -108,17 +113,18 @@ class DataSink_1():
             s (int): nr of seconds per time intervall
         '''
         return  self.last_sink + s <= time.time() 
-    
-    
+   
+
     def update_entry(self, message):
         '''
         Adds a new message to the history df
         Args: 
             message (dict) message as json like dict
         '''
+        message = json.loads(message)
         self.history = self.history.append(message, ignore_index=True)
         
-        
+
     def __calculate_recent_popular(self):
         '''
         Calculates the nr of ratings and the average rating score per product and returns it as pandas.DataFrame
@@ -130,11 +136,11 @@ class DataSink_1():
             df = df.reset_index()
             return df
     
-            
+    
     def check_sink_criterias(self):
         return self.__check_period()
        
-        
+  
     def sink_data(self):
         df = self.__calculate_recent_popular()
         df.to_csv(self.sink_path + time.strftime('%Y_%m_%d_%H_%M_%S', time.localtime()) + ".csv", index=False)
@@ -154,16 +160,16 @@ class DataSink_2():
         # self.__ckeck_path()
         self.history = None
         
-        
+  
     def check_message_valid(self):
         return  self.last_sink + s <= time.time() 
     
-    
+  
     def update_entry(self, message):
-        print(message)
-        self.history = pd.read_json(message, orient="columns")
+        message = json.loads(message)
+        self.history = pd.json_normalize(message, record_path =['averageRating'])
         
-        
+
     def __plot_ranking(self):
         df = self.history
         clear_output(wait=True)
@@ -171,14 +177,14 @@ class DataSink_2():
         plt.bar(df.index, df["count"])
         for x, y, p in zip(df.index, df["count"], df["asin"]):
             plt.text(x, y+1, p, ha="center")
-        for x, y, p in zip(df.index, df["count"], df["mean_overall"]):
-            plt.text(x, y-3, round(p,1), ha="center")
+        for x, y, p in zip(df.index, df["count"], df["meanOverall"]):
+            plt.text(x, y-5, round(p,1), ha="center", color="w")
         plt.title("Most ranked products")
         plt.xlabel("place")
         plt.ylabel("nr of rankings")
         plt.show()
            
-            
+  
     def check_sink_criterias(self):
         return True
 
@@ -199,7 +205,7 @@ class Consumer():
         self.data_sink = data_sink
         self.setup()
         
-        
+ 
     def setup(self):
         '''
         Sets up the connecton to the specified framework.
@@ -222,41 +228,48 @@ class Consumer():
         except Exception as ex:
             print(f"Exception while connecting {self.framework}: {ex}")
             
-            
-    def consume(self, topic_name):
+     
+    def consume(self, topic_name, message_struc, n=None):
         '''
         Gets recieved messages to the initialized framework
         '''
+        self.n = n
+        self.i = 0
+        
         try:
             if self.framework == "kafka":
                 self.consumer.subscribe(topic_name)
                 
                 for i, msg in enumerate(self.consumer):
-                    message = json.loads(msg.value)
-                    print(message)
+                    message = message_struc()
+                    message.ParseFromString(msg.value)
+                    message = MessageToJson(message)
                     self.data_sink.update_entry(message)
                     if self.data_sink.check_sink_criterias():
-                        print("success")
                         self.data_sink.sink_data()
+                        
+                        # stop criteria fr testing
+                        if n is not None:
+                            if i >=n: 
+                                return
                         
             elif self.framework == "rabbitmq":
                 
                 def callback(ch, methods, properties, body):
-                    message = json.loads(body)
-                    # call datasink
+                    message = message_struc()
+                    message.ParseFromString(body)
+                    message = MessageToJson(message)
                     self.data_sink.update_entry(message)
                     if self.data_sink.check_sink_criterias():
                         self.data_sink.sink_data()
-                    
                     ch.basic_ack(delivery_tag=methods.delivery_tag)
+                    if self.n is not None:
+                        self.i += 1
+                        if self.i >= self.n:
+                            ch.close()
                 
                 queue = self.channel.queue_declare(queue=topic_name)
-#                 queue_name = queue.method.queue
-#                 print(queue_name)
-                
-                # self.channel.queue_bind(exchange="", queue=topic_name, routing_key=topic_name)
                 self.channel.basic_consume(queue=topic_name, on_message_callback=callback)
-                
                 self.channel.start_consuming()
             
         except Exception as ex:
