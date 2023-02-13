@@ -103,6 +103,7 @@ celerybeat.pid
 
 # Environments
 .env
+.local/
 .venv
 env/
 venv/
@@ -127,3 +128,11 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# jupyter
+.jupyter/
+
+# Additional Folders
+src/datasink/
+
+

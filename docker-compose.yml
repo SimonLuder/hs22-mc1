@@ -1,15 +1,19 @@
 version: '3'
 
-      
+
 services:
+
   jupyter:
     container_name: jupyter1
-    image: jupyter/scipy-notebook:${JUPYTER_VERSION:-latest}
+    build: ./images/jupyter
+    # image: jupyter/scipy-notebook:${JUPYTER_VERSION:-latest}
     volumes:
       - ./notebooks:/home/jovyan/
+      - ./src:/home/jovyan/src/
     ports:
       - "8888:8888"
-        
+      - "8080:8080"
+      
   zookeeper:
     image: confluentinc/cp-zookeeper
     hostname: zookeeper
@@ -41,7 +45,7 @@ services:
       KAFKA_METRIC_REPORTERS: io.confluent.metrics.reporter.ConfluentMetricsReporter
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      
+
   broker-2:
     image: confluentinc/cp-enterprise-kafka:6.0.10
     hostname: broker2
@@ -63,7 +67,7 @@ services:
       KAFKA_METRIC_REPORTERS: io.confluent.metrics.reporter.ConfluentMetricsReporter
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      
+
   broker-3:
     image: confluentinc/cp-enterprise-kafka:6.0.10
     hostname: broker3
@@ -85,7 +89,7 @@ services:
       KAFKA_METRIC_REPORTERS: io.confluent.metrics.reporter.ConfluentMetricsReporter
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
-      
+
   kafdrop:
     image: obsidiandynamics/kafdrop:latest
     container_name: kafdrop1
@@ -93,6 +97,15 @@ services:
       - 9000:9000
     environment:
       - KAFKA_BROKERCONNECT=broker1:9093,broker2:9095,broker3:9097
-    depends_on: 
+    depends_on:
       - broker-1
-      
+
+  rabbitmq1:
+    image: rabbitmq:3.8-management-alpine
+    hostname: rabbitmq1
+    container_name: rabbitmq1
+    ports:
+      # AMQP protocol port
+      - '5672:5672'
+      # HTTP management UI
+      - '15672:15672'

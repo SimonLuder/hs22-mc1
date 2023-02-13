@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+message Rating {
+    string reviewerID = 1;
+    string asin = 2;
+    int32 overall = 3;
+    string reviewText = 4;
+}
+
+message AverageRating {
+    string asin = 1;
+    float mean_overall = 2;
+    int32 count = 3;
+}
+
+message AverageRatings {
+    repeated AverageRating average_rating = 1;
+}
